@@ -4,7 +4,8 @@ from eth.agents.consensus import AgentConsensus
 from eth.agents.request import ClientRequest, ClientResponse
 from eth.agents.offchain import OffChainStore
 from eth.agents.onchain import OnChainStore, Block
-from eth.agents.models import BaselineAgent, HashAgent, FullAgent
+from eth.agents.multi_offchain import MultiOffChainStore
+from eth.agents.models import BaselineAgent, HBTA2AAgent, FullChainAgent, TrustworthyA2AAgent
 
 __all__ = [
     "Agent",
@@ -15,7 +16,9 @@ __all__ = [
     "OffChainStore",
     "OnChainStore",
     "Block",
+    "MultiOffChainStore",
     "BaselineAgent",
-    "HashAgent",
-    "FullAgent",
+    "HBTA2AAgent",
+    "FullChainAgent",
+    "TrustworthyA2AAgent",
 ]
