@@ -16,17 +16,25 @@ from __future__ import annotations
 
 import csv
 import sys
+import types
 from pathlib import Path
 from typing import Any, Callable
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
+
+# eth/__init__.py는 py-evm 전체 의존성(eth_typing 등)을 요구하므로,
+# eth.agents 서브패키지에 직접 접근하기 위해 eth를 빈 패키지로 등록한다.
+_eth_pkg = types.ModuleType("eth")
+_eth_pkg.__path__ = [str(ROOT / "eth")]
+sys.modules["eth"] = _eth_pkg
 
 from eth.agents.models.off_chain_baseline_model import BaselineAgent
 from eth.agents.models.full_chain_model import FullChainAgent
 from eth.agents.models.hbt_a2a_model import HBTA2AAgent
 from eth.agents.models.trustworthy_a2a_model import TrustworthyA2AAgent
 from eth.agents.request import ClientRequest
-from eth.agents import attacks
+import eth.agents.attacks as attacks
 
 
 # ----------------------------------------------------------------------
