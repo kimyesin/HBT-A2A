@@ -2,9 +2,9 @@
 Agent — base autonomous agent.
 
 Subclasses implement `_store_result()` to choose the storage model:
-  - BaselineAgent : off-chain only   (no consensus, fast, insecure)
-  - HashAgent     : hash on-chain + full off-chain
-  - FullAgent     : everything on-chain (slow, secure)
+  - BaselineAgent  : off-chain only   (no consensus, fast, insecure)
+  - HBTA2AAgent    : hash on-chain + full off-chain
+  - FullChainAgent : everything on-chain (slow, secure)
 """
 from __future__ import annotations
 
