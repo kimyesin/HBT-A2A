@@ -1,15 +1,3 @@
-"""
-Model 2: Hash
-=============
-Pipeline: Client → Agent → Consensus → Hash(온체인) + FullData(오프체인) → Client
-
-- 합의 후 결과의 SHA-256 해시만 온체인에 기록  (최소한의 온체인 데이터)
-- 풀 데이터는 오프체인에 저장
-- 온체인 해시로 오프체인 데이터의 무결성을 검증할 수 있음
-  (해시가 맞으면 데이터가 변조되지 않았음을 보장)
-- 오프체인은 여전히 덮어쓰기 공격에 취약하나,
-  온체인 해시를 통해 변조 여부를 탐지 가능
-"""
 from __future__ import annotations
 
 import hashlib
@@ -27,16 +15,8 @@ def _hash_result(result: Any) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-class HashAgent(Agent):
-    """
-    Hash model: hash on-chain, full data off-chain.
-
-    Security : MEDIUM — on-chain hash proves data integrity;
-                         off-chain full data is still overwritable,
-                         but tampering is detectable via hash mismatch.
-    Speed    : MEDIUM  — consensus required before on-chain write.
-    """
-
+class HBTA2AAgent(Agent):
+    
     def __init__(
         self,
         name: str,

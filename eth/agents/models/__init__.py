@@ -1,5 +1,5 @@
-from eth.agents.models.baseline import BaselineAgent
-from eth.agents.models.hash_model import HashAgent
-from eth.agents.models.full_model import FullAgent
+from eth.agents.models.off_chain_baseline_model import BaselineAgent
+from eth.agents.models.hbt_a2a_model import HashAgent
+from eth.agents.models.full_chain_model import FullAgent
 
 __all__ = ["BaselineAgent", "HashAgent", "FullAgent"]
