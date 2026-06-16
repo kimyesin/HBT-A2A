@@ -3,10 +3,10 @@
 Interactive experiment runner for HBT-A2A / Trustworthy A2A.
 
 Run this script and answer the prompts to choose:
-  - x-axis     : attack intensity, attack frequency, or DB count (N)
+  - x-axis     : attack intensity or attack frequency
   - y-axis     : performance / complexity / efficiency (one or more)
-  - models     : which agent models to compare
-                 (skipped when x-axis = DB count)
+  - N values   : which DB counts to compare (each N = one line on the graph)
+                 N=0 → FullChain, N=1 → HBT-A2A, N≥2 → Trustworthy(db_count=N)
   - attackers  : which attacker types to apply
   - repeats    : number of repetitions per x-value (averaged)
 
@@ -36,21 +36,30 @@ import eth.agents.attacks as attacks
 
 
 # ----------------------------------------------------------------------
-# Model registry
+# DB 개수 N에 따른 에이전트 생성
 # ----------------------------------------------------------------------
 
-MODEL_REGISTRY: dict[str, tuple[str, Callable[[], Any]]] = {
-    "1": ("Baseline",  lambda: BaselineAgent("Agent-A", node_count=3)),
-    "2": ("FullChain", lambda: FullChainAgent("Agent-A", node_count=3)),
-    "3": ("HBT-A2A",   lambda: HBTA2AAgent("Agent-A", node_count=3)),
-    "4": ("Trustworthy", lambda: TrustworthyA2AAgent("Agent-A", node_count=3, db_count=3)),
-}
+def make_agent(n: int) -> Any:
+    """
+    N=0 → FullChainAgent
+    N=1 → HBTA2AAgent
+    N≥2 → TrustworthyA2AAgent(db_count=N)
+    """
+    if n == 0:
+        return FullChainAgent("Agent-A", node_count=3)
+    elif n == 1:
+        return HBTA2AAgent("Agent-A", node_count=3)
+    else:
+        return TrustworthyA2AAgent("Agent-A", node_count=3, db_count=n)
 
-ATTACKER_REGISTRY = {
-    "1": "onchain",
-    "2": "offchain_single",
-    "3": "offchain_multi",
-}
+
+def label_for_n(n: int) -> str:
+    if n == 0:
+        return "N=0 (FullChain)"
+    elif n == 1:
+        return "N=1 (HBT-A2A)"
+    else:
+        return f"N={n} (Trustworthy)"
 
 
 # ----------------------------------------------------------------------
@@ -65,31 +74,7 @@ def make_payload(i: int) -> dict[str, Any]:
     }
 
 
-def make_agent_for_db_count(n: int) -> Any:
-    """
-    N=0 → FullChainAgent (오프체인 없음)
-    N=1 → HBTA2AAgent   (단일 오프체인 DB)
-    N≥2 → TrustworthyA2AAgent(db_count=N)
-    """
-    if n == 0:
-        return FullChainAgent("Agent-A", node_count=3)
-    elif n == 1:
-        return HBTA2AAgent("Agent-A", node_count=3)
-    else:
-        return TrustworthyA2AAgent("Agent-A", node_count=3, db_count=n)
-
-
-def label_for_db_count(n: int) -> str:
-    if n == 0:
-        return "N=0 (FullChain)"
-    elif n == 1:
-        return "N=1 (HBT-A2A)"
-    else:
-        return f"N={n} (Trustworthy)"
-
-
 def apply_attack(agent: Any, attacker_types: list[str], intensity_kb: float) -> None:
-    """Apply the selected attacker type(s) to the agent's storage."""
     for atype in attacker_types:
         if atype == "onchain":
             if hasattr(agent, "onchain"):
@@ -101,21 +86,10 @@ def apply_attack(agent: Any, attacker_types: list[str], intensity_kb: float) -> 
             if hasattr(agent, "offchain") and hasattr(agent.offchain, "_stores"):
                 attacks.attack_multi_offchain(agent.offchain, intensity_kb)
             elif hasattr(agent, "offchain") and hasattr(agent.offchain, "_store"):
-                # N=1 (HBT-A2A) — 단일 DB이므로 offchain_single과 동일하게 처리
                 attacks.attack_offchain(agent.offchain, intensity_kb)
 
 
 def verify_request(agent: Any, request_id: str) -> tuple[bool, int]:
-    """
-    Verify a single request and return (verified, complexity).
-
-    Complexity definition:
-      - HBTA2AAgent        : 1 hash recompute + 1 compare = 2
-      - TrustworthyA2AAgent: db_count hashes + db_count compares
-                             + 1 majority decision (+ recovery writes)
-      - FullChainAgent     : 1 on-chain compare = 1 (always verified)
-      - BaselineAgent      : no verification = 0 (always unverified)
-    """
     cls_name = agent.__class__.__name__
 
     if cls_name == "HBTA2AAgent":
@@ -141,17 +115,17 @@ def verify_request(agent: Any, request_id: str) -> tuple[bool, int]:
 
 
 # ----------------------------------------------------------------------
-# Single experiment run
+# Experiment runner
 # ----------------------------------------------------------------------
 
 def run_once(
-    agent_factory: Callable[[], Any],
+    n: int,
     n_requests: int,
     attacker_types: list[str],
     attack_count: int,
     intensity_kb: float,
 ) -> dict[str, float]:
-    agent = agent_factory()
+    agent = make_agent(n)
 
     req_ids = []
     for i in range(n_requests):
@@ -180,7 +154,7 @@ def run_once(
 
 
 def run_repeated(
-    agent_factory: Callable[[], Any],
+    n: int,
     n_requests: int,
     attacker_types: list[str],
     attack_count: int,
@@ -189,7 +163,7 @@ def run_repeated(
 ) -> dict[str, float]:
     totals = {"performance": 0.0, "complexity": 0.0, "efficiency": 0.0}
     for _ in range(repeats):
-        result = run_once(agent_factory, n_requests, attacker_types, attack_count, intensity_kb)
+        result = run_once(n, n_requests, attacker_types, attack_count, intensity_kb)
         for k in totals:
             totals[k] += result[k]
     return {k: v / repeats for k, v in totals.items()}
@@ -219,134 +193,74 @@ def main() -> None:
     x_axis_choices = {
         "1": "공격 강도 (intensity_kb)",
         "2": "공격 빈도 (attack_count)",
-        "3": "DB 개수 (N)",
     }
     x_axis_key = ask("1. x축을 선택하세요:", x_axis_choices)[0]
 
     y_axis_choices = {"1": "Performance", "2": "Complexity", "3": "Efficiency"}
     y_axis_keys = ask("\n2. y축을 선택하세요 (복수 선택 가능):", y_axis_choices, multi=True)
 
+    n_values_raw = input("\n3. 비교할 DB 개수 N 값들을 입력하세요 (예: 0,1,2,3,5,7,10): ").strip()
+    n_values = [int(v) for v in n_values_raw.split(",")]
+
     attacker_choices = {
         "1": "온체인 공격",
         "2": "단일 오프체인 공격 (DB1)",
         "3": "다중 오프체인 공격 (강도에 따라 여러 DB 동시 공격)",
     }
-    attacker_keys = ask("\n3. 공격 모델을 선택하세요 (복수 선택 가능):", attacker_choices, multi=True)
-    attacker_types = [ATTACKER_REGISTRY[k] for k in attacker_keys]
+    attacker_keys = ask("\n4. 공격 모델을 선택하세요 (복수 선택 가능):", attacker_choices, multi=True)
+    attacker_types = [{"1": "onchain", "2": "offchain_single", "3": "offchain_multi"}[k] for k in attacker_keys]
 
-    repeats = int(input("\n4. 실험 반복 횟수: ").strip() or "1")
-    n_requests = int(input("5. 요청(레코드) 개수: ").strip() or "100")
-
-    # ------------------------------------------------------------------
-    # x축 = DB 개수
-    # ------------------------------------------------------------------
-    if x_axis_key == "3":
-        fixed_attack_count = int(input("6. 공격 빈도(고정값, 공격 횟수): ").strip() or "5")
-        fixed_intensity = float(input("7. 공격 강도(고정값, KB): ").strip() or "10.0")
-        x_label = "DB count (N)"
-        x_values_raw = input("8. N 값들 (예: 0,1,2,3,5,7,10): ").strip()
-        x_values = [int(v) for v in x_values_raw.split(",")]
-
-        all_results: dict[str, dict[Any, dict[str, float]]] = {}
-        y_labels = [y_axis_choices[k] for k in y_axis_keys]
-
-        for n in x_values:
-            label = label_for_db_count(n)
-            factory = lambda n=n: make_agent_for_db_count(n)
-            result = run_repeated(factory, n_requests, attacker_types, fixed_attack_count, fixed_intensity, repeats)
-            all_results[label] = {n: result}
-            print(f"[{label}] -> {result}")
-
-        # CSV
-        out_dir = Path(__file__).resolve().parent / "results"
-        out_dir.mkdir(exist_ok=True)
-        csv_path = out_dir / "experiment_results.csv"
-        with open(csv_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["N", "label", "performance", "complexity", "efficiency"])
-            for label, x_map in all_results.items():
-                for n, metrics in x_map.items():
-                    writer.writerow([n, label, metrics["performance"], metrics["complexity"], metrics["efficiency"]])
-        print(f"\nCSV saved to {csv_path}")
-
-        # Plot (x축 = N, 선 = 1개, 각 N별 값)
-        try:
-            import matplotlib
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-        except ImportError:
-            print("matplotlib이 설치되어 있지 않아 그래프를 생성하지 않습니다.")
-            return
-
-        metric_keys = {"Performance": "performance", "Complexity": "complexity", "Efficiency": "efficiency"}
-        for y_label in y_labels:
-            metric = metric_keys[y_label]
-            plt.figure(figsize=(8, 5))
-            xs = x_values
-            ys = [list(all_results[label_for_db_count(n)][n].values())[["performance","complexity","efficiency"].index(metric)] for n in xs]
-            ys = [all_results[label_for_db_count(n)][n][metric] for n in xs]
-            plt.plot(xs, ys, marker="o", color="steelblue")
-            for x, y in zip(xs, ys):
-                plt.annotate(label_for_db_count(x), (x, y), textcoords="offset points", xytext=(0, 8), ha="center", fontsize=8)
-            plt.xlabel(x_label)
-            plt.ylabel(y_label)
-            plt.title(f"{y_label} vs {x_label}")
-            plt.grid(True, alpha=0.3)
-            plt.xticks(xs)
-            out_path = out_dir / f"{metric}_vs_db_count.png"
-            plt.savefig(out_path, dpi=150, bbox_inches="tight")
-            plt.close()
-            print(f"Chart saved to {out_path}")
-        return
-
-    # ------------------------------------------------------------------
-    # x축 = 공격 강도 or 공격 빈도 (기존 모드)
-    # ------------------------------------------------------------------
-    model_choices = {k: v[0] for k, v in MODEL_REGISTRY.items()}
-    model_keys = ask("\n6. 비교할 모델을 선택하세요 (복수 선택 가능):", model_choices, multi=True)
+    repeats = int(input("\n5. 실험 반복 횟수: ").strip() or "1")
+    n_requests = int(input("6. 요청(레코드) 개수: ").strip() or "100")
 
     if x_axis_key == "1":
         fixed_attack_count = int(input("7. 공격 빈도(고정값, 공격 횟수): ").strip() or "5")
         x_label = "Attack intensity (KB)"
-        x_values_raw = input("8. x축 값들 (예: 0,10,20,30,40,50): ").strip()
-        x_values = [float(v) for v in x_values_raw.split(",")]
+        x_values_raw = input("8. x축 값들 (예: 0,10,20,30,50,70,100): ").strip()
+        x_values: list[Any] = [float(v) for v in x_values_raw.split(",")]
     else:
-        fixed_intensity = float(input("7. 공격 강도(고정값, KB): ").strip() or "1.0")
+        fixed_intensity = float(input("7. 공격 강도(고정값, KB): ").strip() or "10.0")
         x_label = "Attack count"
-        x_values_raw = input("8. x축 값들 (예: 0,10,20,30,40,50): ").strip()
+        x_values_raw = input("8. x축 값들 (예: 0,10,20,30,50,70,100): ").strip()
         x_values = [int(v) for v in x_values_raw.split(",")]
 
-    model_names = [MODEL_REGISTRY[k][0] for k in model_keys]
+    # ------------------------------------------------------------------
+    # Run experiments: N별 × x값별
+    # ------------------------------------------------------------------
     y_labels = [y_axis_choices[k] for k in y_axis_keys]
-    all_results2: dict[str, dict[Any, dict[str, float]]] = {m: {} for m in model_names}
+    all_results: dict[str, dict[Any, dict[str, float]]] = {label_for_n(n): {} for n in n_values}
 
-    for model_name in model_names:
-        factory = next(f for label, f in MODEL_REGISTRY.values() if label == model_name)
+    for n in n_values:
+        label = label_for_n(n)
         for x in x_values:
             if x_axis_key == "1":
-                intensity_kb = x
+                intensity_kb = float(x)
                 attack_count = fixed_attack_count
             else:
                 intensity_kb = fixed_intensity
                 attack_count = int(x)
 
-            result = run_repeated(factory, n_requests, attacker_types, attack_count, intensity_kb, repeats)
-            all_results2[model_name][x] = result
-            print(f"[{model_name}] x={x} -> {result}")
+            result = run_repeated(n, n_requests, attacker_types, attack_count, intensity_kb, repeats)
+            all_results[label][x] = result
+            print(f"[{label}] x={x} -> {result}")
 
-    # CSV
+    # ------------------------------------------------------------------
+    # Save CSV
+    # ------------------------------------------------------------------
     out_dir = Path(__file__).resolve().parent / "results"
     out_dir.mkdir(exist_ok=True)
     csv_path = out_dir / "experiment_results.csv"
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["model", "x", "performance", "complexity", "efficiency"])
-        for model_name, x_map in all_results2.items():
+        writer.writerow(["label", "x", "performance", "complexity", "efficiency"])
+        for label, x_map in all_results.items():
             for x, metrics in x_map.items():
-                writer.writerow([model_name, x, metrics["performance"], metrics["complexity"], metrics["efficiency"]])
+                writer.writerow([label, x, metrics["performance"], metrics["complexity"], metrics["efficiency"]])
     print(f"\nCSV saved to {csv_path}")
 
+    # ------------------------------------------------------------------
     # Plot
+    # ------------------------------------------------------------------
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -356,13 +270,14 @@ def main() -> None:
         return
 
     metric_keys = {"Performance": "performance", "Complexity": "complexity", "Efficiency": "efficiency"}
+
     for y_label in y_labels:
         metric = metric_keys[y_label]
-        plt.figure(figsize=(7, 5))
-        for model_name, x_map in all_results2.items():
+        plt.figure(figsize=(8, 5))
+        for label, x_map in all_results.items():
             xs = sorted(x_map.keys())
             ys = [x_map[x][metric] for x in xs]
-            plt.plot(xs, ys, marker="o", label=model_name)
+            plt.plot(xs, ys, marker="o", label=label)
         plt.xlabel(x_label)
         plt.ylabel(y_label)
         plt.title(f"{y_label} vs {x_label}")
