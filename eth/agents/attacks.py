@@ -125,23 +125,17 @@ def attack_offchain(store: OffChainStore, intensity_kb: float) -> int:
 # Attacker 3 — Multi-replica off-chain (DB1~DBn, random selection)
 # ----------------------------------------------------------------------
 
-def attack_multi_offchain(
-    store: MultiOffChainStore,
-    intensity_kb: float,
-) -> dict[str, Any]:
-    """
-    intensity_kb를 DB 수로 나눠서 각 DB당 공격 강도를 계산.
-    강도가 클수록 더 많은 DB를 동시에 공격.
-    """
-    db_count = store._db_count
-    per_db_intensity = intensity_kb / db_count  # DB당 할당 강도
+def attack_multi_offchain(store, intensity_kb):
+    remaining = intensity_kb
+    per_db = intensity_kb / store._db_count  # DB 1개 포화 기준
     
-    total_attacked = 0
     attacked_dbs = []
-    for i in range(db_count):
-        n = attack_offchain(store._stores[i], per_db_intensity)
+    for i in range(store._db_count):
+        if remaining <= 0:
+            break
+        n = attack_offchain(store._stores[i], min(remaining, per_db))
         if n > 0:
-            total_attacked += n
             attacked_dbs.append(i)
-
-    return {"attacked_dbs": attacked_dbs, "total_attacked": total_attacked}
+        remaining -= per_db
+    
+    return {"attacked_dbs": attacked_dbs, "total_attacked": len(attacked_dbs)}
