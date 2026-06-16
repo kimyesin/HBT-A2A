@@ -128,24 +128,20 @@ def attack_offchain(store: OffChainStore, intensity_kb: float) -> int:
 def attack_multi_offchain(
     store: MultiOffChainStore,
     intensity_kb: float,
-    db_index: int | None = None,
 ) -> dict[str, Any]:
     """
-    Overwrite the most recently stored record(s) in one off-chain DB,
-    chosen randomly among DB1~DBn (unless db_index is given explicitly).
-    Used by Trustworthy A2A.
-
-    Returns
-    -------
-    {
-        "db_index": int,        # which DB was attacked
-        "attacked": int,        # number of records successfully overwritten
-    }
+    intensity_kb를 DB 수로 나눠서 각 DB당 공격 강도를 계산.
+    강도가 클수록 더 많은 DB를 동시에 공격.
     """
-    if db_index is None:
-        db_index = random.randrange(store._db_count)
+    db_count = store._db_count
+    per_db_intensity = intensity_kb / db_count  # DB당 할당 강도
+    
+    total_attacked = 0
+    attacked_dbs = []
+    for i in range(db_count):
+        n = attack_offchain(store._stores[i], per_db_intensity)
+        if n > 0:
+            total_attacked += n
+            attacked_dbs.append(i)
 
-    target_store = store._stores[db_index]
-    attacked = attack_offchain(target_store, intensity_kb)
-
-    return {"db_index": db_index, "attacked": attacked}
+    return {"attacked_dbs": attacked_dbs, "total_attacked": total_attacked}
