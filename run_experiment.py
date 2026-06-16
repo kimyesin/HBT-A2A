@@ -97,13 +97,14 @@ def verify_request(agent: Any, request_id: str) -> tuple[bool, int]:
         return verified, 2
 
     if cls_name == "TrustworthyA2AAgent":
-        result = agent.verify_with_recovery(request_id)
-        db_count = agent.offchain._db_count
-        complexity = 2 * db_count + 1
-        if result["recovery_attempted"] and result["recovery_result"]:
-            recovered = result["recovery_result"].get("recovered_indices", [])
-            complexity += len(recovered)
-        return result["verified"], complexity
+    result = agent.verify_with_recovery(request_id)
+    db_count = agent.offchain._db_count
+    complexity = 2 * db_count + 1
+    if result["recovery_attempted"]:
+        # 복구 성공 여부와 무관하게 시도 자체의 비용 반영
+        # (모든 DB 재확인 + 손상 DB 재동기화 시도)
+        complexity += db_count
+    return result["verified"], complexity
 
     if cls_name == "FullChainAgent":
         return True, 1
